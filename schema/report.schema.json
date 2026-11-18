@@ -1,0 +1,342 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/chaocwu/playwright-http-reporter/schema/report.schema.json",
+  "title": "Playwright HTTP Reporter payload",
+  "description": "Complete test run report posted by @chaocw/playwright-http-reporter.",
+  "type": "object",
+  "required": ["schemaVersion", "run", "summary", "tests", "errors"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "run": {
+      "$ref": "#/$defs/run"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/test"
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/error"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "location": {
+      "type": "object",
+      "required": ["file", "line", "column"],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": true
+    },
+    "error": {
+      "type": "object",
+      "required": ["message"],
+      "properties": {
+        "message": { "type": "string" },
+        "value": { "type": "string" },
+        "stack": { "type": "string" },
+        "snippet": { "type": "string" },
+        "location": { "$ref": "#/$defs/location" }
+      },
+      "additionalProperties": true
+    },
+    "step": {
+      "type": "object",
+      "required": ["title", "category", "duration"],
+      "properties": {
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "category": { "type": "string" },
+        "duration": { "type": "number", "minimum": 0 },
+        "location": { "$ref": "#/$defs/location" },
+        "error": { "$ref": "#/$defs/error" },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/step" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "attachment": {
+      "type": "object",
+      "required": ["name", "contentType"],
+      "properties": {
+        "name": { "type": "string" },
+        "contentType": { "type": "string" },
+        "path": { "type": "string" },
+        "size": { "type": "integer", "minimum": 0 },
+        "body": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "description": "Base64-encoded attachment body. Only present when includeAttachments is enabled."
+        },
+        "omitted": {
+          "enum": ["too-large", "unreadable"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "attempt": {
+      "type": "object",
+      "required": [
+        "retry",
+        "status",
+        "duration",
+        "startTime",
+        "workerIndex",
+        "parallelIndex",
+        "errors",
+        "attachments"
+      ],
+      "properties": {
+        "retry": { "type": "integer", "minimum": 0 },
+        "status": {
+          "enum": ["passed", "failed", "timedOut", "skipped", "interrupted"]
+        },
+        "duration": { "type": "number", "minimum": 0 },
+        "startTime": { "type": "string", "format": "date-time" },
+        "workerIndex": { "type": "integer" },
+        "parallelIndex": { "type": "integer" },
+        "errors": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/error" }
+        },
+        "steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "attachments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/attachment" }
+        },
+        "stdout": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "stderr": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "test": {
+      "type": "object",
+      "required": [
+        "id",
+        "title",
+        "titlePath",
+        "file",
+        "line",
+        "column",
+        "tags",
+        "annotations",
+        "expectedStatus",
+        "outcome",
+        "status",
+        "repeatEachIndex",
+        "attempts"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "titlePath": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 },
+        "projectName": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "annotations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": { "type": "string" },
+              "description": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "expectedStatus": {
+          "enum": ["passed", "failed", "timedOut", "skipped", "interrupted"]
+        },
+        "outcome": {
+          "enum": ["expected", "unexpected", "flaky", "skipped"]
+        },
+        "status": {
+          "enum": ["passed", "failed", "timedOut", "skipped", "interrupted"]
+        },
+        "repeatEachIndex": { "type": "integer", "minimum": 0 },
+        "attempts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/attempt" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "total",
+        "expected",
+        "unexpected",
+        "flaky",
+        "skipped",
+        "passed",
+        "failed",
+        "timedOut",
+        "interrupted"
+      ],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "expected": { "type": "integer", "minimum": 0 },
+        "unexpected": { "type": "integer", "minimum": 0 },
+        "flaky": { "type": "integer", "minimum": 0 },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "timedOut": { "type": "integer", "minimum": 0 },
+        "interrupted": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": true
+    },
+    "run": {
+      "type": "object",
+      "required": [
+        "id",
+        "startedAt",
+        "finishedAt",
+        "duration",
+        "status",
+        "playwrightVersion",
+        "reporter",
+        "runtime",
+        "config",
+        "ci"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "finishedAt": { "type": "string", "format": "date-time" },
+        "duration": { "type": "number", "minimum": 0 },
+        "status": {
+          "enum": ["passed", "failed", "timedout", "interrupted"]
+        },
+        "playwrightVersion": { "type": "string" },
+        "reporter": {
+          "type": "object",
+          "required": ["name", "version"],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "runtime": {
+          "type": "object",
+          "required": ["node", "platform", "arch"],
+          "properties": {
+            "node": { "type": "string" },
+            "platform": { "type": "string" },
+            "arch": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "config": {
+          "type": "object",
+          "required": [
+            "rootDir",
+            "workers",
+            "globalTimeout",
+            "maxFailures",
+            "fullyParallel",
+            "forbidOnly",
+            "updateSnapshots",
+            "projects"
+          ],
+          "properties": {
+            "rootDir": { "type": "string" },
+            "configFile": { "type": "string" },
+            "workers": { "type": "integer" },
+            "globalTimeout": { "type": "number", "minimum": 0 },
+            "maxFailures": { "type": "integer", "minimum": 0 },
+            "fullyParallel": { "type": "boolean" },
+            "forbidOnly": { "type": "boolean" },
+            "updateSnapshots": { "type": "string" },
+            "shard": {
+              "type": "object",
+              "required": ["current", "total"],
+              "properties": {
+                "current": { "type": "integer", "minimum": 1 },
+                "total": { "type": "integer", "minimum": 1 }
+              },
+              "additionalProperties": true
+            },
+            "projects": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "retries", "timeout", "repeatEach", "outputDir", "testDir"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "retries": { "type": "integer", "minimum": 0 },
+                  "timeout": { "type": "number", "minimum": 0 },
+                  "repeatEach": { "type": "integer", "minimum": 0 },
+                  "outputDir": { "type": "string" },
+                  "testDir": { "type": "string" }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "ci": {
+          "type": "object",
+          "required": ["isCI"],
+          "properties": {
+            "isCI": { "type": "boolean" },
+            "provider": { "type": "string" },
+            "buildId": { "type": "string" },
+            "jobId": { "type": "string" },
+            "jobName": { "type": "string" },
+            "workflow": { "type": "string" },
+            "commit": { "type": "string" },
+            "branch": { "type": "string" },
+            "tag": { "type": "string" },
+            "pullRequest": {
+              "type": ["string", "integer"]
+            },
+            "repository": { "type": "string" },
+            "url": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

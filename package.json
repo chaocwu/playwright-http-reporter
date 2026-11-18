@@ -1,0 +1,79 @@
+{
+  "name": "@chaocw/playwright-http-reporter",
+  "version": "0.1.0",
+  "description": "Playwright reporter that sends a complete test run report to an HTTP endpoint.",
+  "keywords": [
+    "playwright",
+    "playwright-reporter",
+    "reporter",
+    "http",
+    "test-reporting",
+    "ci"
+  ],
+  "license": "MIT",
+  "author": "chaocw",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chaocwu/playwright-http-reporter.git"
+  },
+  "homepage": "https://github.com/chaocwu/playwright-http-reporter#readme",
+  "bugs": {
+    "url": "https://github.com/chaocwu/playwright-http-reporter/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/cjs/index.js",
+  "module": "./dist/esm/index.js",
+  "types": "./dist/esm/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
+      "default": "./dist/esm/index.js"
+    },
+    "./schema/report.schema.json": "./schema/report.schema.json",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "prebuild": "node scripts/sync-version.mjs",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs && node scripts/finalize-build.mjs",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "clean": "node scripts/clean.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "node scripts/sync-version.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "pack:check": "npm pack --dry-run",
+    "smoke:pack": "node scripts/smoke-pack.mjs",
+    "prepublishOnly": "node scripts/sync-version.mjs && npm run typecheck && npm test && npm run build"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.40.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  }
+}

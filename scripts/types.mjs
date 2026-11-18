@@ -4,8 +4,7 @@ import { writeFile } from "node:fs/promises";
 await writeFile(
   new URL("../dist/index.d.mts", import.meta.url),
   `import { HttpReporter } from "./index.js";
-export type { HttpReporterOptions, ReporterEvent, ReporterEventName } from "./index.js";
-export { HttpReporter };
+export * from "./index.js";
 export default HttpReporter;
 `,
 );

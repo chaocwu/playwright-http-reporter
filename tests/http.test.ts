@@ -5,6 +5,7 @@ import type { ResolvedOptions } from "../src/options";
 
 const event: ReporterEvent = {
   runId: "run-1",
+  seq: 1,
   event: "testEnd",
   timestamp: "2026-01-01T00:00:00.000Z",
   data: { result: { status: "passed" } },
@@ -19,7 +20,12 @@ const options: ResolvedOptions = {
   verbose: false,
 };
 
-function recordingFetch(handler: (call: { url: string; init: RequestInit }, index: number) => Response | Promise<Response>) {
+function recordingFetch(
+  handler: (
+    call: { url: string; init: RequestInit },
+    index: number,
+  ) => Response | Promise<Response>,
+) {
   const calls: Array<{ url: string; init: RequestInit }> = [];
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const call = { url: String(input), init: init ?? {} };
@@ -42,16 +48,29 @@ describe("serializeEvent", () => {
 
     expect(JSON.parse(serializeEvent({ ...event, data }))).toEqual({
       runId: "run-1",
+      seq: 1,
       event: "testEnd",
       timestamp: "2026-01-01T00:00:00.000Z",
       data: { value: "10", self: "[Circular]" },
+    });
+  });
+
+  it("does not mark shared references outside the current path", () => {
+    const shared = { id: 1 };
+    const data = { first: shared, second: shared };
+
+    expect(JSON.parse(serializeEvent({ ...event, data })).data).toEqual({
+      first: { id: 1 },
+      second: { id: 1 },
     });
   });
 });
 
 describe("postEvent", () => {
   it("posts the event with auth and custom headers", async () => {
-    const { fetch, calls } = recordingFetch(() => new Response(null, { status: 204 }));
+    const { fetch, calls } = recordingFetch(
+      () => new Response(null, { status: 204 }),
+    );
 
     await postEvent(event, {
       ...options,
@@ -70,7 +89,9 @@ describe("postEvent", () => {
   });
 
   it("keeps an explicit authorization header", async () => {
-    const { fetch, calls } = recordingFetch(() => new Response(null, { status: 204 }));
+    const { fetch, calls } = recordingFetch(
+      () => new Response(null, { status: 204 }),
+    );
 
     await postEvent(event, {
       ...options,
@@ -84,7 +105,9 @@ describe("postEvent", () => {
 
   it("retries retryable responses", async () => {
     const { fetch, calls } = recordingFetch((_call, index) =>
-      index === 0 ? new Response("busy", { status: 503 }) : new Response(null, { status: 204 }),
+      index === 0
+        ? new Response("busy", { status: 503 })
+        : new Response(null, { status: 204 }),
     );
 
     await postEvent(event, { ...options, retries: 1, fetch });
@@ -93,20 +116,28 @@ describe("postEvent", () => {
   });
 
   it("does not retry client errors", async () => {
-    const { fetch, calls } = recordingFetch(() => new Response("nope", { status: 400 }));
+    const { fetch, calls } = recordingFetch(
+      () => new Response("nope", { status: 400 }),
+    );
 
-    await expect(postEvent(event, { ...options, retries: 3, fetch })).rejects.toThrow("HTTP 400");
+    await expect(
+      postEvent(event, { ...options, retries: 3, fetch }),
+    ).rejects.toThrow("HTTP 400");
     expect(calls).toHaveLength(1);
   });
 
   it("times out stalled requests", async () => {
     const fetch = ((_input: string | URL | Request, init?: RequestInit) =>
       new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        init?.signal?.addEventListener(
+          "abort",
+          () => reject(new Error("aborted")),
+          { once: true },
+        );
       })) as typeof globalThis.fetch;
 
-    await expect(postEvent(event, { ...options, timeout: 20, fetch })).rejects.toThrow(
-      "timed out after 20ms",
-    );
+    await expect(
+      postEvent(event, { ...options, timeout: 20, fetch }),
+    ).rejects.toThrow("timed out after 20ms");
   });
 });

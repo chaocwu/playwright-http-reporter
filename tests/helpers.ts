@@ -48,7 +48,9 @@ export function makeConfig(): FullConfig {
   return { version: "1.65.0", rootDir: "/repo" } as FullConfig;
 }
 
-export function makeFullResult(overrides: Partial<FullResult> = {}): FullResult {
+export function makeFullResult(
+  overrides: Partial<FullResult> = {},
+): FullResult {
   return {
     status: "passed",
     startTime: new Date("2026-01-01T00:00:00.000Z"),

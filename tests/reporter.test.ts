@@ -10,10 +10,9 @@ import {
   makeTestCase,
 } from "./helpers";
 
-let server: ReturnType<typeof Bun.serve>;
 let requests: ReporterEvent[] = [];
 
-server = Bun.serve({
+const server = Bun.serve({
   port: 0,
   async fetch(request) {
     if (new URL(request.url).pathname === "/fail") {
@@ -36,7 +35,10 @@ afterAll(() => {
 
 describe("HttpReporter", () => {
   it("sends begin, testEnd and end events in order", async () => {
-    const step = { title: "step", steps: [] as unknown[] } as Record<string, unknown>;
+    const step = { title: "step", steps: [] as unknown[] } as Record<
+      string,
+      unknown
+    >;
     step.parent = step;
 
     const result = makeResult({
@@ -47,7 +49,11 @@ describe("HttpReporter", () => {
       stdout: ["hello"],
       stderr: ["warning"],
       attachments: [
-        { name: "screenshot", contentType: "image/png", path: "test-results/a.png" },
+        {
+          name: "screenshot",
+          contentType: "image/png",
+          path: "test-results/a.png",
+        },
       ],
       retry: 2,
     });
@@ -63,7 +69,12 @@ describe("HttpReporter", () => {
     await reporter.onEnd(makeFullResult({ status: "failed", duration: 999 }));
 
     expect(reporter.printsToStdio()).toBe(false);
-    expect(requests.map((item) => item.event)).toEqual(["begin", "testEnd", "end"]);
+    expect(requests.map((item) => item.event)).toEqual([
+      "begin",
+      "testEnd",
+      "end",
+    ]);
+    expect(requests.map((item) => item.seq)).toEqual([0, 1, 2]);
     expect(new Set(requests.map((item) => item.runId)).size).toBe(1);
 
     const testEvent = requests[1]!.data as {
@@ -87,13 +98,20 @@ describe("HttpReporter", () => {
       stderr: ["warning"],
       retry: 2,
       attachments: [
-        { name: "screenshot", contentType: "image/png", path: "test-results/a.png" },
+        {
+          name: "screenshot",
+          contentType: "image/png",
+          path: "test-results/a.png",
+        },
       ],
     });
     expect(testEvent.result.steps[0]!.parent).toBe("[Circular]");
 
     expect(requests[0]!.data).toEqual({ totalTests: 1 });
-    expect(requests[2]!.data).toMatchObject({ status: "failed", duration: 999 });
+    expect(requests[2]!.data).toMatchObject({
+      status: "failed",
+      duration: 999,
+    });
   });
 
   it("sends runner errors", async () => {
@@ -102,12 +120,17 @@ describe("HttpReporter", () => {
     await reporter.onEnd(makeFullResult());
 
     expect(requests.map((item) => item.event)).toEqual(["error", "end"]);
-    expect(requests[0]!.data).toMatchObject({ message: "global teardown failed" });
+    expect(requests[0]!.data).toMatchObject({
+      message: "global teardown failed",
+    });
   });
 
   it("does not reject when the endpoint fails", async () => {
     const error = spyOn(console, "error").mockImplementation(() => {});
-    const reporter = new HttpReporter({ endpoint: endpoint.replace("/report", "/fail"), retries: 0 });
+    const reporter = new HttpReporter({
+      endpoint: endpoint.replace("/report", "/fail"),
+      retries: 0,
+    });
 
     reporter.onBegin(makeConfig(), makeSuite([]));
     await reporter.onEnd(makeFullResult());

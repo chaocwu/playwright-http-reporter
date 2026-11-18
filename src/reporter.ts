@@ -11,7 +11,11 @@ import type {
 } from "@playwright/test/reporter";
 
 import { postEvent, type ReporterEvent } from "./http.js";
-import { resolveOptions, type HttpReporterOptions, type ResolvedOptions } from "./options.js";
+import {
+  resolveOptions,
+  type HttpReporterOptions,
+  type ResolvedOptions,
+} from "./options.js";
 
 /**
  * Sends one HTTP request per reporter event. Playwright's TestResult is
@@ -20,6 +24,7 @@ import { resolveOptions, type HttpReporterOptions, type ResolvedOptions } from "
 export class HttpReporter implements Reporter {
   private readonly options: ResolvedOptions;
   private readonly runId = randomUUID();
+  private seq = 0;
   private queue: Promise<void> = Promise.resolve();
 
   constructor(options: HttpReporterOptions) {
@@ -67,9 +72,12 @@ export class HttpReporter implements Reporter {
     return false;
   }
 
-  private enqueue(event: Omit<ReporterEvent, "runId" | "timestamp">): void {
+  private enqueue(
+    event: Omit<ReporterEvent, "runId" | "seq" | "timestamp">,
+  ): void {
     const payload: ReporterEvent = {
       runId: this.runId,
+      seq: this.seq++,
       timestamp: new Date().toISOString(),
       ...event,
     };

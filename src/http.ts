@@ -6,21 +6,26 @@ export type ReporterEventName = "begin" | "testEnd" | "error" | "end";
 
 export interface ReporterEvent {
   runId: string;
+  seq: number;
   event: ReporterEventName;
   timestamp: string;
   data: unknown;
 }
 
-/** JSON-encodes an event, dropping functions and marking circular references. */
+/** JSON-encodes an event, dropping functions and marking true cycles only. */
 export function serializeEvent(event: ReporterEvent): string {
-  const seen = new WeakSet<object>();
-  return JSON.stringify(event, (_key, value) => {
+  const ancestors: object[] = [];
+
+  return JSON.stringify(event, function (this: unknown, _key, value) {
     if (typeof value === "function") return undefined;
     if (typeof value === "bigint") return value.toString();
-    if (value && typeof value === "object") {
-      if (seen.has(value)) return "[Circular]";
-      seen.add(value);
+    if (!value || typeof value !== "object") return value;
+
+    while (ancestors.length > 0 && ancestors[ancestors.length - 1] !== this) {
+      ancestors.pop();
     }
+    if (ancestors.includes(value)) return "[Circular]";
+    ancestors.push(value);
     return value;
   });
 }
@@ -44,7 +49,9 @@ function buildHeaders(options: PostEventOptions): Record<string, string> {
     set("Authorization", `Bearer ${options.token}`);
   }
 
-  return Object.fromEntries(Array.from(headers.values(), ({ name, value }) => [name, value]));
+  return Object.fromEntries(
+    Array.from(headers.values(), ({ name, value }) => [name, value]),
+  );
 }
 
 function isRetryable(status: number): boolean {
@@ -52,7 +59,10 @@ function isRetryable(status: number): boolean {
 }
 
 /** Sends one event, retrying network errors and retryable HTTP statuses. */
-export async function postEvent(event: ReporterEvent, options: PostEventOptions): Promise<void> {
+export async function postEvent(
+  event: ReporterEvent,
+  options: PostEventOptions,
+): Promise<void> {
   const body = serializeEvent(event);
   const headers = buildHeaders(options);
   const fetchImpl = options.fetch ?? globalThis.fetch;
@@ -71,7 +81,10 @@ export async function postEvent(event: ReporterEvent, options: PostEventOptions)
         signal: controller.signal,
       });
 
-      if (response.ok) return;
+      if (response.ok) {
+        await response.body?.cancel().catch(() => {});
+        return;
+      }
 
       const text = await response.text().catch(() => "");
       lastError = `HTTP ${response.status}${text ? `: ${text.slice(0, 500)}` : ""}`;

@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const root = new URL("../", import.meta.url);
-const packageName = JSON.parse(await readFile(new URL("package.json", root), "utf8")).name;
+const packageName = JSON.parse(
+  await readFile(new URL("package.json", root), "utf8"),
+).name;
 
 const output = execFileSync("npm", ["pack", "--silent"], {
   cwd: root,

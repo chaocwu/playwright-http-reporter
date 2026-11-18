@@ -36,8 +36,9 @@ One `POST` per reporter event:
 
 ```jsonc
 {
-  "runId": "5f0c…",           // same for every event of a run
-  "event": "testEnd",         // begin | testEnd | error | end
+  "runId": "5f0c…", // same for every event of a run
+  "seq": 3, // 0-based position of the event in the run
+  "event": "testEnd", // begin | testEnd | error | end
   "timestamp": "2026-11-18T05:00:00.000Z",
   "data": {
     "test": {
@@ -50,34 +51,43 @@ One `POST` per reporter event:
       "annotations": [],
       "expectedStatus": "passed",
       "outcome": "unexpected",
-      "repeatEachIndex": 0
+      "repeatEachIndex": 0,
     },
-    "result": { "retry": 0, "status": "failed", "duration": 1200, "errors": [], "steps": [], "...": "…" }
-  }
+    "result": {
+      "retry": 0,
+      "status": "failed",
+      "duration": 1200,
+      "errors": [],
+      "steps": [],
+      "...": "…",
+    },
+  },
 }
 ```
 
-| `event` | `data` |
-| --- | --- |
-| `begin` | `{ totalTests }` |
+| `event`   | `data`                                                          |
+| --------- | --------------------------------------------------------------- |
+| `begin`   | `{ totalTests }`                                                |
 | `testEnd` | `{ test, result }`, where `result` is Playwright's `TestResult` |
-| `error` | Playwright's `TestError` |
-| `end` | Playwright's `FullResult` |
+| `error`   | Playwright's `TestError`                                        |
+| `end`     | Playwright's `FullResult`                                       |
 
 `result` is forwarded as Playwright provides it: retries, errors, steps, attachments, stdout and stderr are untouched. Serialization omits functions and replaces circular references (for example `step.parent`) with `"[Circular]"`.
+
+`runId` and `seq` identify an event. Retries can deliver the same event twice, so deduplicate on that pair.
 
 Requests use `Content-Type: application/json`, `Accept: application/json`, `User-Agent: @chaocw/playwright-http-reporter`, and `Authorization: Bearer <token>` when `token` is set.
 
 ## Options
 
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `endpoint` | `string` | required | URL that receives the requests. |
-| `token` | `string` | – | Bearer token; ignored when `headers` already sets `authorization`. |
-| `headers` | `Record<string, string>` | `{}` | Extra request headers. |
-| `timeout` | `number` | `10000` | Per-request timeout in milliseconds. |
-| `retries` | `number` | `2` | Retries after the first failed request. |
-| `verbose` | `boolean` | `false` | Log each upload to stderr. |
+| Option     | Type                     | Default  | Description                                                        |
+| ---------- | ------------------------ | -------- | ------------------------------------------------------------------ |
+| `endpoint` | `string`                 | required | URL that receives the requests.                                    |
+| `token`    | `string`                 | –        | Bearer token; ignored when `headers` already sets `authorization`. |
+| `headers`  | `Record<string, string>` | `{}`     | Extra request headers.                                             |
+| `timeout`  | `number`                 | `10000`  | Per-request timeout in milliseconds.                               |
+| `retries`  | `number`                 | `2`      | Retries after the first failed request.                            |
+| `verbose`  | `boolean`                | `false`  | Log each upload to stderr.                                         |
 
 Events are sent in order. `onEnd` waits for the queue, so the process does not exit before pending requests finish. Network errors, `408`, `429` and `5xx` are retried with exponential backoff; other responses are not. A failed upload is logged to stderr and does not fail the test run.
 
@@ -92,7 +102,9 @@ node example/server.mjs
 ## Public API
 
 ```ts
-import HttpReporter, { type HttpReporterOptions } from "@chaocw/playwright-http-reporter";
+import HttpReporter, {
+  type HttpReporterOptions,
+} from "@chaocw/playwright-http-reporter";
 ```
 
 The default export and the named `HttpReporter` are the same class. The package ships ESM, CommonJS and TypeScript declarations.
@@ -101,6 +113,9 @@ The default export and the named `HttpReporter` are the same class. The package 
 
 ```bash
 bun install
+bun run typecheck
+bun run lint
+bun run format:check
 bun test
 bun run build
 bun run smoke:pack

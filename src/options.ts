@@ -23,7 +23,11 @@ export interface ResolvedOptions {
 }
 
 export function resolveOptions(options: HttpReporterOptions): ResolvedOptions {
-  if (!options || typeof options.endpoint !== "string" || options.endpoint.trim() === "") {
+  if (
+    !options ||
+    typeof options.endpoint !== "string" ||
+    options.endpoint.trim() === ""
+  ) {
     throw new Error("[playwright-http-reporter] 'endpoint' is required");
   }
 
@@ -31,20 +35,28 @@ export function resolveOptions(options: HttpReporterOptions): ResolvedOptions {
   try {
     url = new URL(options.endpoint);
   } catch {
-    throw new Error(`[playwright-http-reporter] invalid 'endpoint': ${options.endpoint}`);
+    throw new Error(
+      `[playwright-http-reporter] invalid 'endpoint': ${options.endpoint}`,
+    );
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("[playwright-http-reporter] 'endpoint' must use http or https");
+    throw new Error(
+      "[playwright-http-reporter] 'endpoint' must use http or https",
+    );
   }
 
   const timeout = options.timeout ?? 10_000;
   if (!Number.isFinite(timeout) || timeout <= 0) {
-    throw new Error("[playwright-http-reporter] 'timeout' must be greater than 0");
+    throw new Error(
+      "[playwright-http-reporter] 'timeout' must be greater than 0",
+    );
   }
 
   const retries = options.retries ?? 2;
   if (!Number.isFinite(retries) || retries < 0) {
-    throw new Error("[playwright-http-reporter] 'retries' must be a non-negative number");
+    throw new Error(
+      "[playwright-http-reporter] 'retries' must be a non-negative number",
+    );
   }
 
   return {

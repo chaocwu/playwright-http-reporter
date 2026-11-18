@@ -38,4 +38,4 @@ jobs:
       - name: Verify tag matches package version
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
 
-      - run: npm publish --access public
+      - run: npm publish --access public --loglevel verbose

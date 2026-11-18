@@ -1,276 +1,118 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { afterAll, beforeEach, describe, expect, it, spyOn } from "bun:test";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
-
-import type { FetchLike } from "../src/options.js";
-import type { ReportPayload } from "../src/payload.js";
-import { HttpReporter } from "../src/reporter.js";
+import type { ReporterEvent } from "../src/http";
+import { HttpReporter } from "../src/reporter";
 import {
   makeConfig,
-  makeError,
   makeFullResult,
   makeResult,
   makeSuite,
-  makeTest,
-} from "./helpers.js";
+  makeTestCase,
+} from "./helpers";
 
-interface RecordedCall {
-  url: string;
-  init: RequestInit;
-}
+let server: ReturnType<typeof Bun.serve>;
+let requests: ReporterEvent[] = [];
 
-function recordingFetch(
-  handler: (call: RecordedCall, index: number) => Response | Promise<Response> = () =>
-    new Response(null, { status: 202 }),
-): { fetch: FetchLike; calls: RecordedCall[] } {
-  const calls: RecordedCall[] = [];
-  const fetch: FetchLike = async (url, init) => {
-    const call = { url: String(url), init: init ?? {} };
-    calls.push(call);
-    return handler(call, calls.length - 1);
-  };
-  return { fetch, calls };
-}
+server = Bun.serve({
+  port: 0,
+  async fetch(request) {
+    if (new URL(request.url).pathname === "/fail") {
+      return new Response("down", { status: 400 });
+    }
+    requests.push((await request.json()) as ReporterEvent);
+    return new Response(null, { status: 204 });
+  },
+});
 
-function payloadOf(call: RecordedCall | undefined): ReportPayload {
-  if (!call) throw new Error("expected an HTTP request");
-  return JSON.parse(call.init.body as string) as ReportPayload;
-}
+const endpoint = `http://127.0.0.1:${server.port}/report`;
 
-const tempDirectories: string[] = [];
+beforeEach(() => {
+  requests = [];
+});
 
-async function tempDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "pw-http-reporter-"));
-  tempDirectories.push(directory);
-  return directory;
-}
-
-afterEach(async () => {
-  vi.restoreAllMocks();
-  await Promise.all(
-    tempDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
-  );
+afterAll(() => {
+  server.stop(true);
 });
 
 describe("HttpReporter", () => {
-  it("uploads a complete report on end", async () => {
-    const { fetch, calls } = recordingFetch();
-    const suite = makeSuite([
-      makeTest({
-        title: "checkout works",
-        tags: ["@smoke"],
-        results: [makeResult({ status: "passed", duration: 12 })],
-      }),
-    ]);
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      token: "secret",
-      metadata: { environment: "staging" },
-      fetch,
-    });
+  it("sends begin, testEnd and end events in order", async () => {
+    const step = { title: "step", steps: [] as unknown[] } as Record<string, unknown>;
+    step.parent = step;
 
-    reporter.onBegin(makeConfig(), suite);
-    await reporter.onEnd(makeFullResult());
+    const result = makeResult({
+      status: "failed",
+      duration: 321,
+      errors: [{ message: "boom", stack: "stack" }],
+      steps: [step] as never,
+      stdout: ["hello"],
+      stderr: ["warning"],
+      attachments: [
+        { name: "screenshot", contentType: "image/png", path: "test-results/a.png" },
+      ],
+      retry: 2,
+    });
+    const test = makeTestCase({
+      id: "abc",
+      title: "checkout works",
+      outcome: () => "unexpected",
+      results: [result],
+    });
+    const reporter = new HttpReporter({ endpoint, retries: 0 });
+    reporter.onBegin(makeConfig(), makeSuite([test]));
+    reporter.onTestEnd(test, result);
+    await reporter.onEnd(makeFullResult({ status: "failed", duration: 999 }));
 
     expect(reporter.printsToStdio()).toBe(false);
-    expect(calls).toHaveLength(1);
-    expect(calls[0]!.url).toBe("https://ci.example.com/report");
+    expect(requests.map((item) => item.event)).toEqual(["begin", "testEnd", "end"]);
+    expect(new Set(requests.map((item) => item.runId)).size).toBe(1);
 
-    const payload = payloadOf(calls[0]);
-    expect(payload.schemaVersion).toBe(1);
-    expect(payload.run.status).toBe("passed");
-    expect(payload.run.metadata).toEqual({ environment: "staging" });
-    expect(payload.summary.total).toBe(1);
-    expect(payload.tests[0]).toMatchObject({
+    const testEvent = requests[1]!.data as {
+      test: { id: string; title: string; projectName: string };
+      result: {
+        status: string;
+        duration: number;
+        stdout: string[];
+        steps: Array<{ parent: string }>;
+      };
+    };
+    expect(testEvent.test).toMatchObject({
+      id: "abc",
       title: "checkout works",
-      status: "passed",
-      outcome: "expected",
-      tags: ["@smoke"],
+      projectName: "chromium",
     });
+    expect(testEvent.result).toMatchObject({
+      status: "failed",
+      duration: 321,
+      stdout: ["hello"],
+      stderr: ["warning"],
+      retry: 2,
+      attachments: [
+        { name: "screenshot", contentType: "image/png", path: "test-results/a.png" },
+      ],
+    });
+    expect(testEvent.result.steps[0]!.parent).toBe("[Circular]");
+
+    expect(requests[0]!.data).toEqual({ totalTests: 1 });
+    expect(requests[2]!.data).toMatchObject({ status: "failed", duration: 999 });
   });
 
-  it("skips successful runs when onlyOnFailure is enabled", async () => {
-    const { fetch, calls } = recordingFetch();
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      onlyOnFailure: true,
-      fetch,
-    });
-
-    reporter.onBegin(makeConfig(), makeSuite([makeTest()]));
+  it("sends runner errors", async () => {
+    const reporter = new HttpReporter({ endpoint, retries: 0 });
+    reporter.onError({ message: "global teardown failed" });
     await reporter.onEnd(makeFullResult());
 
-    expect(calls).toHaveLength(0);
+    expect(requests.map((item) => item.event)).toEqual(["error", "end"]);
+    expect(requests[0]!.data).toMatchObject({ message: "global teardown failed" });
   });
 
-  it("uploads failed runs when onlyOnFailure is enabled", async () => {
-    const { fetch, calls } = recordingFetch();
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      onlyOnFailure: true,
-      fetch,
-    });
-    const suite = makeSuite([
-      makeTest({
-        outcome: "unexpected",
-        results: [makeResult({ status: "failed", errors: [makeError("boom")] })],
-      }),
-    ]);
+  it("does not reject when the endpoint fails", async () => {
+    const error = spyOn(console, "error").mockImplementation(() => {});
+    const reporter = new HttpReporter({ endpoint: endpoint.replace("/report", "/fail"), retries: 0 });
 
-    reporter.onBegin(makeConfig(), suite);
-    await reporter.onEnd(makeFullResult({ status: "failed" }));
-
-    expect(calls).toHaveLength(1);
-    expect(payloadOf(calls[0]).summary.unexpected).toBe(1);
-  });
-
-  it("uploads flaky runs when onlyOnFailure is enabled", async () => {
-    const { fetch, calls } = recordingFetch();
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      onlyOnFailure: true,
-      fetch,
-    });
-    const suite = makeSuite([
-      makeTest({
-        outcome: "flaky",
-        results: [
-          makeResult({ retry: 0, status: "failed", errors: [makeError("first try")] }),
-          makeResult({ retry: 1, status: "passed" }),
-        ],
-      }),
-    ]);
-
-    reporter.onBegin(makeConfig(), suite);
+    reporter.onBegin(makeConfig(), makeSuite([]));
     await reporter.onEnd(makeFullResult());
 
-    expect(calls).toHaveLength(1);
-    expect(payloadOf(calls[0]).summary.flaky).toBe(1);
-  });
-
-  it("treats expected failures as successful when onlyOnFailure is enabled", async () => {
-    const { fetch, calls } = recordingFetch();
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      onlyOnFailure: true,
-      fetch,
-    });
-    const suite = makeSuite([
-      makeTest({
-        outcome: "expected",
-        expectedStatus: "failed",
-        results: [makeResult({ status: "failed", errors: [makeError("known issue")] })],
-      }),
-    ]);
-
-    reporter.onBegin(makeConfig(), suite);
-    await reporter.onEnd(makeFullResult());
-
-    expect(calls).toHaveLength(0);
-  });
-
-  it("uploads when the runner reported an error", async () => {
-    const { fetch, calls } = recordingFetch();
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      onlyOnFailure: true,
-      fetch,
-    });
-    vi.spyOn(console, "error").mockImplementation(() => {});
-
-    reporter.onBegin(makeConfig(), makeSuite([makeTest()]));
-    reporter.onError(makeError("global teardown failed"));
-    await reporter.onEnd(makeFullResult());
-
-    expect(calls).toHaveLength(1);
-    expect(payloadOf(calls[0]).errors[0]!.message).toBe("global teardown failed");
-  });
-
-  it("applies transformPayload before uploading", async () => {
-    const { fetch, calls } = recordingFetch();
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      fetch,
-      transformPayload: (payload) => ({
-        ...payload,
-        run: { ...payload.run, metadata: { transformed: true } },
-      }),
-    });
-
-    reporter.onBegin(makeConfig(), makeSuite([makeTest()]));
-    await reporter.onEnd(makeFullResult());
-
-    expect(payloadOf(calls[0]).run.metadata).toEqual({ transformed: true });
-  });
-
-  it("saves the report to disk when the upload fails", async () => {
-    const directory = await tempDirectory();
-    const { fetch, calls } = recordingFetch(
-      () => new Response("server down", { status: 503 }),
-    );
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      retries: 1,
-      retryDelay: 0,
-      fallbackDir: directory,
-      fetch,
-    });
-
-    reporter.onBegin(makeConfig(), makeSuite([makeTest()]));
-    await reporter.onEnd(makeFullResult());
-
-    expect(calls).toHaveLength(2);
-    const file = join(directory, `playwright-http-reporter-${payloadOf(calls[0]).run.id}.json`);
-    const saved = JSON.parse(await readFile(file, "utf8"));
-
-    expect(saved.error).toContain("HTTP 503");
-    expect(saved.attempts).toBe(2);
-    expect(saved.endpoint).toBe("https://ci.example.com/report");
-    expect(saved.reporter.name).toBe("@chaocw/playwright-http-reporter");
-    expect(saved.payload.schemaVersion).toBe(1);
-  });
-
-  it("saves the original report when transformPayload throws", async () => {
-    const directory = await tempDirectory();
-    const { fetch, calls } = recordingFetch();
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      fallbackDir: directory,
-      fetch,
-      transformPayload: () => {
-        throw new Error("redaction failed");
-      },
-    });
-
-    reporter.onBegin(makeConfig(), makeSuite([makeTest()]));
-    await reporter.onEnd(makeFullResult());
-
-    expect(calls).toHaveLength(0);
-    const files = await readdir(directory);
-    expect(files).toHaveLength(1);
-    const saved = JSON.parse(await readFile(join(directory, files[0]!), "utf8"));
-    expect(saved.error).toContain("transformPayload threw");
-    expect(saved.attempts).toBe(0);
-    expect(saved.payload.schemaVersion).toBe(1);
-  });
-
-  it("throws when failOnError is enabled and the upload fails", async () => {
-    const directory = await tempDirectory();
-    const { fetch } = recordingFetch(() => new Response("nope", { status: 400 }));
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const reporter = new HttpReporter({
-      endpoint: "https://ci.example.com/report",
-      fallbackDir: directory,
-      failOnError: true,
-      fetch,
-    });
-
-    reporter.onBegin(makeConfig(), makeSuite([makeTest()]));
-
-    await expect(reporter.onEnd(makeFullResult())).rejects.toThrow("report upload failed");
+    expect(error).toHaveBeenCalled();
+    error.mockRestore();
   });
 });

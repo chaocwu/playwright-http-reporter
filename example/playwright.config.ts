@@ -1,19 +1,19 @@
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 import { defineConfig } from "@playwright/test";
 
-// The example uses the built output directly so it can run inside this repository.
-const reporterPath = fileURLToPath(new URL("../dist/esm/index.js", import.meta.url));
+// Runs the built reporter directly so the example works inside this repository.
+const reporterPath = resolve("dist/index.cjs");
 
 export default defineConfig({
   testDir: "./tests",
+  testMatch: "**/*.ts",
   reporter: [
     ["list"],
     [
       reporterPath,
       {
         endpoint: process.env.REPORT_ENDPOINT ?? "http://127.0.0.1:8787/report",
-        metadata: { example: true },
         verbose: true,
       },
     ],

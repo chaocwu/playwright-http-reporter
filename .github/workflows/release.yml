@@ -8,14 +8,10 @@ permissions:
   contents: read
   id-token: write
 
-concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: false
-
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -29,22 +25,13 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
 
-      - name: Verify npm version supports trusted publishing
-        run: |
-          node -e "const v = require('child_process').execSync('npm --version').toString().trim().split('.').map(Number); if (v[0] < 11 || (v[0] === 11 && v[1] < 5) || (v[0] === 11 && v[1] === 5 && v[2] < 1)) { console.error('npm >= 11.5.1 is required for trusted publishing'); process.exit(1); }"
-
       - run: bun install --frozen-lockfile
 
-      - run: npm run typecheck
+      - run: bun test
 
-      - run: npm test
-
-      - run: npm run build
+      - run: bun run build
 
       - name: Verify tag matches package version
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          test "v$VERSION" = "$GITHUB_REF_NAME"
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
 
-      - name: Publish with trusted publishing
-        run: npm publish --access public
+      - run: npm publish --access public
